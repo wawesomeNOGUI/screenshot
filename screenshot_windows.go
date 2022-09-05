@@ -17,33 +17,47 @@ var (
 	funcEnumDisplaySettings, _ = syscall.GetProcAddress(syscall.Handle(libUser32), "EnumDisplaySettingsW")
 )
 
-func Capture(x, y, width, height int) (*image.RGBA, error) {
-	rect := image.Rect(0, 0, width, height)
+var (
+	rect image.Rect
+	img *image.RGBA
+	hwnd win.HWND
+	hdc win.HDC
+	memory_device int
+	bitmap int
+	header win.BITMAPINFOHEADER
+	bitmapDataSize int
+	hmem int
+	memptr int
+	old int
+)
+
+// call before Capture
+func Setup() {
+	rect = image.Rect(0, 0, width, height)
 	img, err := util.CreateImage(rect)
 	if err != nil {
 		return nil, err
 	}
 
-	hwnd := getDesktopWindow()
-	hdc := win.GetDC(hwnd)
+	hwnd = getDesktopWindow()
+	hdc = win.GetDC(hwnd)
 	if hdc == 0 {
-		return nil, errors.New("GetDC failed")
+		//return nil, errors.New("GetDC failed")
 	}
-	defer win.ReleaseDC(hwnd, hdc)
+	//defer win.ReleaseDC(hwnd, hdc)
 
-	memory_device := win.CreateCompatibleDC(hdc)
+	memory_device = win.CreateCompatibleDC(hdc)
 	if memory_device == 0 {
-		return nil, errors.New("CreateCompatibleDC failed")
+		//return nil, errors.New("CreateCompatibleDC failed")
 	}
-	defer win.DeleteDC(memory_device)
+	//defer win.DeleteDC(memory_device)
 
-	bitmap := win.CreateCompatibleBitmap(hdc, int32(width), int32(height))
+	bitmap = win.CreateCompatibleBitmap(hdc, int32(width), int32(height))
 	if bitmap == 0 {
-		return nil, errors.New("CreateCompatibleBitmap failed")
+		//return nil, errors.New("CreateCompatibleBitmap failed")
 	}
-	defer win.DeleteObject(win.HGDIOBJ(bitmap))
+	//defer win.DeleteObject(win.HGDIOBJ(bitmap))
 
-	var header win.BITMAPINFOHEADER
 	header.BiSize = uint32(unsafe.Sizeof(header))
 	header.BiPlanes = 1
 	header.BiBitCount = 32
@@ -55,18 +69,28 @@ func Capture(x, y, width, height int) (*image.RGBA, error) {
 	// GetDIBits balks at using Go memory on some systems. The MSDN example uses
 	// GlobalAlloc, so we'll do that too. See:
 	// https://docs.microsoft.com/en-gb/windows/desktop/gdi/capturing-an-image
-	bitmapDataSize := uintptr(((int64(width)*int64(header.BiBitCount) + 31) / 32) * 4 * int64(height))
-	hmem := win.GlobalAlloc(win.GMEM_MOVEABLE, bitmapDataSize)
-	defer win.GlobalFree(hmem)
-	memptr := win.GlobalLock(hmem)
-	defer win.GlobalUnlock(hmem)
+	bitmapDataSize = uintptr(((int64(width)*int64(header.BiBitCount) + 31) / 32) * 4 * int64(height))
+	hmem = win.GlobalAlloc(win.GMEM_MOVEABLE, bitmapDataSize)
+	// defer win.GlobalFree(hmem)
+	memptr = win.GlobalLock(hmem)
+	// defer win.GlobalUnlock(hmem)
 
-	old := win.SelectObject(memory_device, win.HGDIOBJ(bitmap))
+	old = win.SelectObject(memory_device, win.HGDIOBJ(bitmap))
 	if old == 0 {
-		return nil, errors.New("SelectObject failed")
+		// return nil, errors.New("SelectObject failed")
 	}
-	defer win.SelectObject(memory_device, old)
+	// defer win.SelectObject(memory_device, old)
 
+}
+
+// call after finished streaming to release DC's and memory used for storing screenshot img data
+func tearDown() {
+
+}
+
+func Capture(x, y, width, height int) (*image.RGBA, error) {
+	once.Do(onceBody)
+	
 	if !win.BitBlt(memory_device, 0, 0, int32(width), int32(height), hdc, int32(x), int32(y), win.SRCCOPY) {
 		return nil, errors.New("BitBlt failed")
 	}
