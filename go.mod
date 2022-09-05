@@ -1,4 +1,4 @@
-module github.com/wawesomeNOGUI
+module github.com/wawesomeNOGUI/screenshot
 
 go 1.19
 
